@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, ".")
 from data_pipeline import load
 from models.ensemble import EnsemblePredictor
+from models.lstm_model import TF_AVAILABLE
 from backtest import run_backtest
 
 st.set_page_config(page_title="Finance Predictor", page_icon="📈", layout="wide")
@@ -25,9 +26,14 @@ train_split = st.sidebar.slider("Train/test split (%)", 60, 90, 80)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Model Settings")
-lstm_epochs = st.sidebar.slider("LSTM epochs", 5, 50, 20,
-                                 help="More epochs = better LSTM, but slower training")
-use_lstm = st.sidebar.toggle("Enable LSTM (slower)", value=True)
+if TF_AVAILABLE:
+    use_lstm = st.sidebar.toggle("Enable LSTM (slower)", value=True)
+    lstm_epochs = st.sidebar.slider("LSTM epochs", 5, 50, 20,
+                                     help="More epochs = better LSTM, but slower training")
+else:
+    use_lstm = False
+    lstm_epochs = 0
+    st.sidebar.info("ℹ️ LSTM unavailable (TensorFlow not installed). Running XGBoost only.")
 
 run_btn = st.sidebar.button("Run Prediction", type="primary")
 

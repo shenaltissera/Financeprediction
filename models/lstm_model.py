@@ -3,6 +3,15 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import os
 
+# Graceful TensorFlow import — app works without it (XGBoost-only mode)
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TF_AVAILABLE = True
+except Exception:
+    TF_AVAILABLE = False
+
 SEQUENCE_LEN = 60
 FEATURE_COLS = [
     "open", "high", "low", "close", "volume",
@@ -26,11 +35,8 @@ class FinanceLSTM:
         self.model = None
 
     def _build_model(self, n_features: int):
-        try:
-            from tensorflow import keras
-            from tensorflow.keras import layers
-        except ImportError:
-            raise ImportError("Install tensorflow: pip install tensorflow")
+        if not TF_AVAILABLE:
+            raise ImportError("TensorFlow is not available in this environment.")
 
         model = keras.Sequential([
             layers.LSTM(128, return_sequences=True, input_shape=(self.seq_len, n_features)),
@@ -87,7 +93,8 @@ class FinanceLSTM:
         joblib.dump(self.scaler, f"{path}/scaler.pkl")
 
     def load(self, path: str = "models/lstm"):
-        from tensorflow import keras
+        if not TF_AVAILABLE:
+            raise ImportError("TensorFlow is not available in this environment.")
         import joblib
         self.model = keras.models.load_model(f"{path}/model.keras")
         self.scaler = joblib.load(f"{path}/scaler.pkl")

@@ -11,7 +11,7 @@ Strategy:
 import numpy as np
 import pandas as pd
 from models.xgboost_model import FinanceXGB
-from models.lstm_model import FinanceLSTM
+from models.lstm_model import FinanceLSTM, TF_AVAILABLE
 
 XGB_WEIGHT = 0.4
 LSTM_WEIGHT = 0.6
@@ -31,12 +31,16 @@ class EnsemblePredictor:
 
         if progress_cb:
             progress_cb("Training LSTM...", 0.4)
-        try:
-            self.lstm.fit(train_df, epochs=self.lstm_epochs, batch_size=32)
-            self._lstm_ok = True
-        except Exception as e:
-            print(f"[Ensemble] LSTM training failed: {e}. Using XGBoost only.")
+        if not TF_AVAILABLE:
+            print("[Ensemble] TensorFlow not available. Using XGBoost only.")
             self._lstm_ok = False
+        else:
+            try:
+                self.lstm.fit(train_df, epochs=self.lstm_epochs, batch_size=32)
+                self._lstm_ok = True
+            except Exception as e:
+                print(f"[Ensemble] LSTM training failed: {e}. Using XGBoost only.")
+                self._lstm_ok = False
 
         if progress_cb:
             progress_cb("Done!", 1.0)
