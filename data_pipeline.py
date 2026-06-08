@@ -9,7 +9,11 @@ from ta.volatility import BollingerBands
 
 def fetch_stock(ticker: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
     df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
-    df.columns = [c.lower() for c in df.columns]
+    # yfinance ≥0.2 returns a MultiIndex (metric, ticker); flatten to single-level
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [c[0].lower() for c in df.columns]
+    else:
+        df.columns = [c.lower() for c in df.columns]
     df.index.name = "date"
     return df.dropna()
 
