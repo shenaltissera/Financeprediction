@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pkl
+*.keras
+models/xgb/
+models/lstm/
+*.png
+.env
+venv/
+.venv/
