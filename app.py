@@ -35,6 +35,15 @@ else:
     lstm_epochs = 0
     st.sidebar.info("ℹ️ LSTM unavailable (TensorFlow not installed). Running XGBoost only.")
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎚️ Signal Thresholds")
+buy_threshold = st.sidebar.slider(
+    "BUY threshold (up-prob ≥)", 0.50, 0.80, 0.55, step=0.01,
+    help="Model must be this confident price will rise to emit a BUY signal")
+sell_threshold = st.sidebar.slider(
+    "SELL threshold (up-prob ≤)", 0.20, 0.50, 0.45, step=0.01,
+    help="Model must be this confident price will fall to emit a SELL signal")
+
 run_btn = st.sidebar.button("Run Prediction", type="primary")
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -62,7 +71,8 @@ progress_bar = st.progress(0.0, text="Starting training...")
 def update_progress(msg: str, pct: float):
     progress_bar.progress(pct, text=msg)
 
-ensemble = EnsemblePredictor(lstm_epochs=lstm_epochs if use_lstm else 0)
+ensemble = EnsemblePredictor(lstm_epochs=lstm_epochs if use_lstm else 0,
+                             buy_threshold=buy_threshold, sell_threshold=sell_threshold)
 if not use_lstm:
     ensemble._lstm_ok = False
     ensemble.xgb.fit(train_df)
@@ -129,6 +139,14 @@ with tab1:
     m2.metric("Direction F1", f"{metrics['direction_f1']:.3f}")
     m3.metric("% Change MAE", f"{metrics['pct_mae']:.4f}")
     m4.metric("Price RMSE", f"${metrics['price_rmse']:,.2f}")
+
+    st.markdown("**Signal Distribution (test set)**")
+    s1, s2, s3 = st.columns(3)
+    s1.metric("🟢 BUY signals", f"{metrics['signal_buy_pct']:.1f}%")
+    s2.metric("🟡 HOLD signals", f"{metrics['signal_hold_pct']:.1f}%")
+    s3.metric("🔴 SELL signals", f"{metrics['signal_sell_pct']:.1f}%")
+    if metrics['signal_buy_pct'] < 5 or metrics['signal_sell_pct'] < 5:
+        st.warning("Very few BUY/SELL signals. Try lowering the thresholds in the sidebar.")
 
 # ────────────────────────────────────────────────────────────────────
 # TAB 2 — Chart
@@ -283,3 +301,4 @@ with tab4:
 
     with st.expander("📋 Full Backtest Stats"):
         st.json(bt_metrics)
+

@@ -18,8 +18,8 @@ LSTM_WEIGHT = 0.6
 
 
 class EnsemblePredictor:
-    def __init__(self, lstm_epochs: int = 20):
-        self.xgb = FinanceXGB()
+    def __init__(self, lstm_epochs: int = 20, buy_threshold: float = 0.55, sell_threshold: float = 0.45):
+        self.xgb = FinanceXGB(buy_threshold=buy_threshold, sell_threshold=sell_threshold)
         self.lstm = FinanceLSTM()
         self.lstm_epochs = lstm_epochs
         self._lstm_ok = False  # flag if LSTM trained successfully
@@ -67,14 +67,10 @@ class EnsemblePredictor:
         ens_up_prob = XGB_WEIGHT * xgb_up_prob + LSTM_WEIGHT * lstm_up_prob
         ens_direction = int(ens_up_prob >= 0.5)
 
-        # Signal: if both agree use that, else use ensemble direction
-        xgb_sig = xgb_pred["signal"]
-        lstm_sig = 1 if lstm_pred["direction"] == 1 else -1
-        if xgb_sig == lstm_sig:
-            ens_signal = xgb_sig
-        else:
-            # tiebreak: trust direction probability
-            ens_signal = 1 if ens_up_prob > 0.55 else (-1 if ens_up_prob < 0.45 else 0)
+        # Signal: use ensemble probability with same thresholds as XGBoost
+        buy_t = self.xgb.buy_threshold
+        sell_t = self.xgb.sell_threshold
+        ens_signal = 1 if ens_up_prob >= buy_t else (-1 if ens_up_prob <= sell_t else 0)
 
         # Confidence: how far from 0.5 the ensemble is
         confidence = abs(ens_up_prob - 0.5) * 2  # 0=uncertain, 1=certain
@@ -98,9 +94,5 @@ class EnsemblePredictor:
         return self.xgb.evaluate(test_df)
 
     def get_test_signals(self, test_df: pd.DataFrame) -> pd.Series:
-        """Generate per-row signals for the test set (XGBoost, fast)."""
-        from models.xgboost_model import FEATURE_COLS
-        raw = self.xgb.signal_model.predict(
-            self.xgb.scaler.transform(test_df[FEATURE_COLS].values)
-        ) - 1
-        return pd.Series(raw, index=test_df.index)
+        """Generate per-row signals for the test set using direction probability thresholds."""
+        return self.xgb.get_signals(test_df)

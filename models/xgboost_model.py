@@ -27,7 +27,12 @@ def prepare(df: pd.DataFrame):
 
 
 class FinanceXGB:
-    def __init__(self):
+    def __init__(self, buy_threshold: float = 0.55, sell_threshold: float = 0.45):
+        # Signal is derived from direction probability — no separate signal classifier.
+        # buy_threshold:  up-prob must exceed this to emit BUY  (default 55%)
+        # sell_threshold: up-prob must be below this to emit SELL (default 45%)
+        self.buy_threshold = buy_threshold
+        self.sell_threshold = sell_threshold
         self.direction_model = XGBClassifier(n_estimators=200, learning_rate=0.05,
                                              max_depth=6, subsample=0.8,
                                              colsample_bytree=0.8, random_state=42,
@@ -38,41 +43,52 @@ class FinanceXGB:
         self.price_model = XGBRegressor(n_estimators=200, learning_rate=0.05,
                                         max_depth=6, subsample=0.8,
                                         colsample_bytree=0.8, random_state=42)
-        self.signal_model = XGBClassifier(n_estimators=200, learning_rate=0.05,
-                                          max_depth=6, subsample=0.8,
-                                          colsample_bytree=0.8, random_state=42,
-                                          eval_metric="mlogloss")
         self.scaler = None
+
+    def _proba_to_signal(self, up_proba: np.ndarray) -> np.ndarray:
+        """Convert per-row up-probabilities to -1/0/1 signals."""
+        return np.where(up_proba >= self.buy_threshold, 1,
+               np.where(up_proba <= self.sell_threshold, -1, 0))
 
     def fit(self, df: pd.DataFrame):
         X, self.scaler = prepare(df)
         self.direction_model.fit(X, df["target_direction"])
         self.pct_model.fit(X, df["target_pct_change"])
         self.price_model.fit(X, df["target_price"])
-        # shift signal labels to 0,1,2 for XGB multiclass
-        self.signal_model.fit(X, df["target_signal"] + 1)
         return self
 
     def predict(self, df: pd.DataFrame) -> dict:
         X = self.scaler.transform(df[FEATURE_COLS].values)
+        up_proba = self.direction_model.predict_proba(X)[-1][1]
         return {
-            "direction": int(self.direction_model.predict(X)[-1]),
-            "direction_proba": float(self.direction_model.predict_proba(X)[-1][1]),
+            "direction": int(up_proba >= 0.5),
+            "direction_proba": float(up_proba),
             "pct_change": float(self.pct_model.predict(X)[-1]),
             "price": float(self.price_model.predict(X)[-1]),
-            "signal": int(self.signal_model.predict(X)[-1]) - 1,  # back to -1,0,1
+            "signal": int(self._proba_to_signal(np.array([up_proba]))[0]),
         }
+
+    def get_signals(self, df: pd.DataFrame) -> pd.Series:
+        """Per-row signals for backtesting."""
+        X = self.scaler.transform(df[FEATURE_COLS].values)
+        up_probas = self.direction_model.predict_proba(X)[:, 1]
+        return pd.Series(self._proba_to_signal(up_probas), index=df.index)
 
     def evaluate(self, df: pd.DataFrame) -> dict:
         X = self.scaler.transform(df[FEATURE_COLS].values)
-        direction_pred = self.direction_model.predict(X)
+        up_probas = self.direction_model.predict_proba(X)[:, 1]
+        direction_pred = (up_probas >= 0.5).astype(int)
         pct_pred = self.pct_model.predict(X)
         price_pred = self.price_model.predict(X)
+        signals = self._proba_to_signal(up_probas)
         return {
             "direction_accuracy": accuracy_score(df["target_direction"], direction_pred),
             "direction_f1": f1_score(df["target_direction"], direction_pred),
             "pct_mae": mean_absolute_error(df["target_pct_change"], pct_pred),
             "price_rmse": float(np.sqrt(mean_squared_error(df["target_price"], price_pred))),
+            "signal_buy_pct": float((signals == 1).mean() * 100),
+            "signal_hold_pct": float((signals == 0).mean() * 100),
+            "signal_sell_pct": float((signals == -1).mean() * 100),
         }
 
     def save(self, path: str = "models/xgb"):
@@ -80,15 +96,18 @@ class FinanceXGB:
         joblib.dump(self.direction_model, f"{path}/direction.pkl")
         joblib.dump(self.pct_model, f"{path}/pct.pkl")
         joblib.dump(self.price_model, f"{path}/price.pkl")
-        joblib.dump(self.signal_model, f"{path}/signal.pkl")
         joblib.dump(self.scaler, f"{path}/scaler.pkl")
+        joblib.dump({"buy_threshold": self.buy_threshold,
+                     "sell_threshold": self.sell_threshold}, f"{path}/config.pkl")
 
     def load(self, path: str = "models/xgb"):
         self.direction_model = joblib.load(f"{path}/direction.pkl")
         self.pct_model = joblib.load(f"{path}/pct.pkl")
         self.price_model = joblib.load(f"{path}/price.pkl")
-        self.signal_model = joblib.load(f"{path}/signal.pkl")
         self.scaler = joblib.load(f"{path}/scaler.pkl")
+        cfg = joblib.load(f"{path}/config.pkl")
+        self.buy_threshold = cfg["buy_threshold"]
+        self.sell_threshold = cfg["sell_threshold"]
         return self
 
 
