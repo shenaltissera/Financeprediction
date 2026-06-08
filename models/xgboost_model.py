@@ -72,7 +72,7 @@ class FinanceXGB:
             "direction_accuracy": accuracy_score(df["target_direction"], direction_pred),
             "direction_f1": f1_score(df["target_direction"], direction_pred),
             "pct_mae": mean_absolute_error(df["target_pct_change"], pct_pred),
-            "price_rmse": mean_squared_error(df["target_price"], price_pred, squared=False),
+            "price_rmse": float(np.sqrt(mean_squared_error(df["target_price"], price_pred))),
         }
 
     def save(self, path: str = "models/xgb"):
